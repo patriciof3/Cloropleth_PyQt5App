@@ -1,1 +1,1 @@
-first save as a py file
+import PyQt5.QtWidgets as qtw
