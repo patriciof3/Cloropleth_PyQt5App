@@ -2,8 +2,10 @@ import sys
 import pandas as pd
 import geopandas as gpd
 from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QFileDialog, QLineEdit
+from PyQt5.QtGui import QPixmap
 import matplotlib.pyplot as plt
 import matplotlib.patheffects as pe
+import os
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -47,6 +49,9 @@ class MainWindow(QMainWindow):
         self.run_button = QPushButton("Ejectutar")
         self.run_button.clicked.connect(self.run_code)
         layout.addWidget(self.run_button)
+
+        self.image_label = QLabel()
+        layout.addWidget(self.image_label)
 
         central_widget = QWidget()
         central_widget.setLayout(layout)
@@ -159,6 +164,10 @@ class MainWindow(QMainWindow):
 
         else:
             print("No SHP file selected.")
+
+        image_path = os.path.join(os.getcwd(), guardar_como + ".png")
+        pixmap = QPixmap(image_path)
+        self.image_label.setPixmap(pixmap)
 
 
 if __name__ == '__main__':
