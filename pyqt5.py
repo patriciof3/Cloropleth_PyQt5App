@@ -1,71 +1,171 @@
-import PyQt5.QtWidgets as qtw
+import sys
 import pandas as pd
-import PyQt5.QtGui as qtg
+import geopandas as gpd
+from PyQt5.QtWidgets import QApplication, QMainWindow, QVBoxLayout, QWidget, QLabel, QPushButton, QFileDialog, QLineEdit
+import matplotlib.pyplot as plt
+import matplotlib.patheffects as pe
 
-class MainWindow(qtw.QWidget):
+class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        
-        #Add title
-        self.setWindowTitle("App-Consultora")
 
-        # Set vertical layout
-        self.setLayout(qtw.QVBoxLayout())
+        self.setWindowTitle("Generador de Mapas de Calor")
+        self.setGeometry(100, 100, 300, 200)
 
-        #Create label
+        layout = QVBoxLayout()
 
-        load_label = qtw.QLabel("Introduzca su base de datos")
+        self.csv_label = QLabel("No CSV file selected.")
+        layout.addWidget(self.csv_label)
 
-        #Change fontsize of label
-        load_label.setFont(qtg.QFont("Helvetica", 12))
+        self.csv_button = QPushButton("Seleccione archivo CSV")
+        self.csv_button.clicked.connect(self.select_csv)
+        layout.addWidget(self.csv_button)
 
-        self.layout().addWidget(load_label)
+        self.shp_label = QLabel("No SHP file selected.")
+        layout.addWidget(self.shp_label)
 
-        #Create an entry box
+        self.shp_button = QPushButton("Seleccione archivo SHP")
+        self.shp_button.clicked.connect(self.select_shp)
+        layout.addWidget(self.shp_button)
 
-        my_entry =qtw.QLineEdit()
-        my_entry.setObjectName("csv_file")
-        self.layout().addWidget(my_entry)
+        self.variable_input = QLineEdit()
+        self.variable_input.setPlaceholderText("Nombre de la variable:")
+        layout.addWidget(self.variable_input)
 
-        #Create button
+        self.atributo_input = QLineEdit()
+        self.atributo_input.setPlaceholderText("Atributo de la variable")
+        layout.addWidget(self.atributo_input)
 
-        my_button = qtw.QPushButton("Cargar archivo",
-            clicked = lambda: press_it())
-        self.layout().addWidget(my_button)
+        self.titulo_input = QLineEdit()
+        self.titulo_input.setPlaceholderText("Título de la imagen")
+        layout.addWidget(self.titulo_input)
 
-        loaded_label = qtw.QLabel("No ha cargado ningún archivo")
-        loaded_label.setFont(qtg.QFont("Helvetica", 12))
-        self.layout().addWidget(loaded_label)
-           
+        self.guardar_input = QLineEdit()
+        self.guardar_input.setPlaceholderText("Guardar como:")
+        layout.addWidget(self.guardar_input)
 
-        def press_it():
-            loaded_label.setText(f"El archivo <{my_entry.text()}> se ha cargado con éxito")
+        self.run_button = QPushButton("Ejectutar")
+        self.run_button.clicked.connect(self.run_code)
+        layout.addWidget(self.run_button)
 
-            # Create a button and set its text
-        load_btn = qtw.QPushButton('Import CSV', self)
-        load_btn.move(20, 20)
-        self.layout().addWidget(load_btn)
+        central_widget = QWidget()
+        central_widget.setLayout(layout)
+        self.setCentralWidget(central_widget)
 
-        # Connect the clicked signal to the import_csv method
-        load_btn.clicked.connect(self.import_csv)
+        self.csv_file = ""
+        self.shp_file = ""
 
-    def import_csv(self):
-        options = qtw.QFileDialog.Options()
-        options |= qtw.QFileDialog.ReadOnly
-        file_name, _ = qtw.QFileDialog.getOpenFileName(self,"QFileDialog.getOpenFileName()", "","All Files (*);;CSV Files (*.csv)", options=options)
-        if file_name:
-            # Read the CSV file into a DataFrame using pandas
-            self.df = pd.read_csv(file_name, sep = ";")
-            # Print the DataFrame to the console
-            print(self.df.head())
-            
+    def select_csv(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        filename, _ = QFileDialog.getOpenFileName(self, "Select CSV File", "",
+                                                  "CSV Files (*.csv);;All Files (*)", options=options)
+        if filename:
+            self.csv_file = filename
+            self.csv_label.setText(f"Selected CSV file: {self.csv_file}")
 
-        self.show()
+    def select_shp(self):
+        options = QFileDialog.Options()
+        options |= QFileDialog.DontUseNativeDialog
+        filename, _ = QFileDialog.getOpenFileName(self, "Select SHP File", "",
+                                                  "Shapefiles (*.shp);;All Files (*)", options=options)
+        if filename:
+            self.shp_file = filename
+            self.shp_label.setText(f"Selected SHP file: {self.shp_file}")
+
+    def run_code(self):
+
+        variable = self.variable_input.text()
+        atributo = self.atributo_input.text()
+        titulo = self.titulo_input.text()
+        guardar_como = self.guardar_input.text()
 
 
-app= qtw.QApplication([])
+        if self.csv_file:
+                                        # Load CSV file into a pandas DataFrame
+                df = pd.read_csv(self.csv_file, sep = ";")
 
-mw = MainWindow()
+                # change lat and long format
+                df.latitud.replace(to_replace=",",value=".", inplace=True, regex=True)
+
+                df.longitud.replace(to_replace=",", value=".", inplace=True, regex=True)
+
+                #drop cases where there is no localization data
+                df = df[~df.latitud.str.contains(" ")]
+
+                df = df[~df.longitud.str.contains(" ")]
 
 
-app.exec_()
+                #Transform df into a geodataframe
+                dfgeo = gpd.GeoDataFrame(df, geometry=gpd.points_from_xy(df.longitud, df.latitud))
+
+                #Set crs of coordinates in dfgeo to match distritos
+                dfgeo = dfgeo.set_crs("EPSG:4326")
+
+        else:
+            print("No CSV file selected.")
+
+        if self.shp_file:
+            # Load SHP file into a GeoPandas DataFrame
+                distritos = gpd.read_file(self.shp_file)
+                geojoined = gpd.sjoin(dfgeo, distritos, op="within")
+
+                list_porc = []
+
+                def porcentaje(distri):
+                    geodist=geojoined[geojoined.Name == distri]
+
+                    porcdist = geodist[variable][geodist[variable] == atributo].count() *100 / geodist[variable].count()
+
+                    list_porc.append(porcdist)
+
+                    return list_porc
+
+                dist= distritos.Name.values
+
+                list_porc=[]
+
+                for i in dist:
+                    porcentaje(i)
+
+
+                #ADD LIST AS A COLUMN IN DISTRICTS DATAFRAME
+
+                distritos["new_var"]=list_porc
+                distritos["new_var"]=distritos["new_var"].round(decimals=1)
+
+                fig, ax = plt.subplots(figsize=(8, 8))
+
+                distritos.plot(ax=ax,
+                                column="new_var",
+                                cmap="Blues",
+                                legend=False,
+                                edgecolor="0")
+
+
+                distritos.apply(lambda x: ax.annotate(text=x['new_var'],
+                                xy=x.geometry.centroid.coords[0],
+                                ha='center',
+                                fontsize=13,
+                                color="white",
+                                path_effects=[pe.withStroke(linewidth=3, foreground="black")]),
+                                axis=1)
+
+                ax.axis("off")
+
+                ax.set_title(titulo, fontsize=18, font="monospace", ha="center")
+
+                plt.savefig(guardar_como + ".png", transparent=True)
+
+        else:
+            print("No SHP file selected.")
+
+
+if __name__ == '__main__':
+    app = QApplication(sys.argv)
+    window = MainWindow()
+    window.show()
+    sys.exit(app.exec_())
+
+
+
